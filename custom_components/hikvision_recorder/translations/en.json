@@ -1,0 +1,31 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to the recorder",
+        "description": "Enter the address and credentials of the Hikvision NVR.",
+        "data": {
+          "host": "Host",
+          "username": "Username",
+          "password": "Password"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Reauthenticate",
+        "description": "The credentials for {host} are no longer valid. Enter the new password.",
+        "data": {
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to the recorder.",
+      "invalid_auth": "Invalid username or password."
+    },
+    "abort": {
+      "already_configured": "This recorder is already configured.",
+      "reauth_successful": "Re-authentication was successful.",
+      "unique_id_mismatch": "The credentials belong to a different recorder."
+    }
+  }
+}
