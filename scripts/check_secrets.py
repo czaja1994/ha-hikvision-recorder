@@ -4,19 +4,47 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
+import time
+
+import httpx
 
 from _env import ROOT, client, load_env
 
 
-def live_values(env: dict[str, str]) -> set[str]:
+class SecretCheckError(Exception):
+    """The live identifiers could not be obtained; the gate must fail closed."""
+
+
+def parse_identifiers(text: str) -> set[str]:
+    """Extract serialNumber and macAddress; raise if either is missing or empty."""
     values: set[str] = set()
-    with client(env) as http:
-        response = http.get("/ISAPI/System/deviceInfo")
-        response.raise_for_status()
     for tag in ("serialNumber", "macAddress"):
-        match = re.search(rf"<{tag}[^>]*>([^<]+)</{tag}>", response.text)
-        if match:
-            values.add(match.group(1).strip())
+        match = re.search(rf"<{tag}[^>]*>([^<]+)</{tag}>", text)
+        if not match or not match.group(1).strip():
+            raise SecretCheckError(f"{tag} not found in deviceInfo response")
+        values.add(match.group(1).strip())
+    return values
+
+
+def fetch_device_info(env: dict[str, str]) -> str:
+    """GET deviceInfo, retrying 503 up to 3 times (1 s, 2 s pauses)."""
+    try:
+        with client(env) as http:
+            for attempt in range(3):
+                response = http.get("/ISAPI/System/deviceInfo")
+                if response.status_code != 503:
+                    break
+                if attempt < 2:
+                    time.sleep(attempt + 1)
+    except httpx.HTTPError as err:
+        raise SecretCheckError(f"NVR unreachable ({type(err).__name__})") from None
+    if response.status_code != 200:
+        raise SecretCheckError(f"deviceInfo returned HTTP {response.status_code}")
+    return response.text
+
+
+def live_values(env: dict[str, str]) -> set[str]:
+    values = parse_identifiers(fetch_device_info(env))
     if env.get("HIK_PASS"):
         values.add(env["HIK_PASS"])
     if env.get("HIK_USER") and env["HIK_USER"].lower() != "admin":
@@ -40,7 +68,11 @@ def git_files() -> list[str]:
 
 def main() -> int:
     env = load_env()
-    secrets = live_values(env)
+    try:
+        secrets = live_values(env)
+    except SecretCheckError as err:
+        print(f"ERROR: cannot verify secrets, failing closed: {err}")
+        return 2
     found: list[str] = []
     for name in git_files():
         path = ROOT / name
