@@ -198,3 +198,7 @@ async def test_errors_never_leak_password(fake_nvr):
             await client.get_device_info()
     assert "s3cr3t-pw" not in str(excinfo.value)
     assert "Authorization" not in str(excinfo.value)
+
+
+async def test_get_track_xml_returns_text_unchanged(nvr_client, fake_nvr):
+    assert await nvr_client.get_track_xml(301) == fake_nvr.track_xml(301)

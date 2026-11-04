@@ -200,6 +200,11 @@ class HikvisionNvrClient:
         response = await self._request("GET", PATH_TRACKS)
         return self._parse(PATH_TRACKS, parse_schedule_enabled, response.text)
 
+    async def get_track_xml(self, track_id: int) -> str:
+        """Return the raw XML of one record track, unchanged."""
+        response = await self._request("GET", f"{PATH_TRACKS}/{track_id}")
+        return response.text
+
     async def set_recording(self, enabled: bool, track_ids: Iterable[int]) -> None:
         """Set enableSchedule on each track; try all, then report failures.
 
