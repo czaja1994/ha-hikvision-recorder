@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<InputProxyChannelList version="1.0" xmlns="http://www.hikvision.com/ver20/XMLSchema" size="1">
+<InputProxyChannel version="1.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+<id>1</id>
+<name>Hall</name>
+<sourceInputPortDescriptor>
+<proxyProtocol>HIKVISION</proxyProtocol>
+<addressingFormatType>ipaddress</addressingFormatType>
+<ipAddress>192.168.254.2</ipAddress>
+<managePortNo>8000</managePortNo>
+<srcInputPort>1</srcInputPort>
+<userName>admin</userName>
+<connMode>manual</connMode>
+<streamType>auto</streamType>
+<deviceID>00000000-0000-0000-0000-000000000001</deviceID>
+</sourceInputPortDescriptor>
+</InputProxyChannel>
+<InputProxyChannel version="1.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+<id>2</id>
+<name>Living room</name>
+<sourceInputPortDescriptor>
+<proxyProtocol>HIKVISION</proxyProtocol>
+<addressingFormatType>ipaddress</addressingFormatType>
+<ipAddress>192.168.254.3</ipAddress>
+<managePortNo>8000</managePortNo>
+<srcInputPort>1</srcInputPort>
+<userName>admin</userName>
+<connMode>manual</connMode>
+<streamType>auto</streamType>
+<deviceID>00000000-0000-0000-0000-000000000001</deviceID>
+</sourceInputPortDescriptor>
+</InputProxyChannel>
+<InputProxyChannel version="1.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+<id>3</id>
+<name>Office</name>
+<sourceInputPortDescriptor>
+<proxyProtocol>HIKVISION</proxyProtocol>
+<addressingFormatType>ipaddress</addressingFormatType>
+<ipAddress>192.168.254.4</ipAddress>
+<managePortNo>8000</managePortNo>
+<srcInputPort>1</srcInputPort>
+<userName>admin</userName>
+<connMode>manual</connMode>
+<streamType>auto</streamType>
+<deviceID>00000000-0000-0000-0000-000000000001</deviceID>
+</sourceInputPortDescriptor>
+</InputProxyChannel>
+</InputProxyChannelList>

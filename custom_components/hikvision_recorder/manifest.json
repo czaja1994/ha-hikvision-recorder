@@ -1,0 +1,12 @@
+{
+  "domain": "hikvision_recorder",
+  "name": "Hikvision Recorder",
+  "codeowners": ["@czaja1994"],
+  "config_flow": true,
+  "documentation": "https://github.com/czaja1994/ha-hikvision-recorder",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/czaja1994/ha-hikvision-recorder/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

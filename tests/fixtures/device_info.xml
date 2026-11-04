@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<DeviceInfo version="1.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+<deviceName>Network Video Recorder</deviceName>
+<deviceID>00000000-0000-0000-0000-000000000001</deviceID>
+<model>NVR-4CH-POE</model>
+<serialNumber>TESTSERIAL0001</serialNumber>
+<macAddress>00:00:00:00:00:01</macAddress>
+<firmwareVersion>V4.30.216</firmwareVersion>
+<firmwareReleasedDate>build 210706</firmwareReleasedDate>
+<encoderVersion>V5.0</encoderVersion>
+<encoderReleasedDate>build 201223</encoderReleasedDate>
+<deviceType>NVR</deviceType>
+<telecontrolID>255</telecontrolID>
+</DeviceInfo>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<ResponseStatus version="1.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+<requestURL>/ISAPI/ContentMgmt/InputProxy/channels/capabilities</requestURL>
+<statusCode>2</statusCode>
+<statusString>Device Busy</statusString>
+<subStatusCode>serviceUnavailable</subStatusCode>
+</ResponseStatus>
