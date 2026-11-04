@@ -100,6 +100,7 @@ async def test_write_forbidden_names_permission(nvr_client, fake_nvr):
     with pytest.raises(NvrAuthError) as excinfo:
         await nvr_client.set_recording(False, ALL_TRACKS)
     assert excinfo.value.required_permission == "Remote: Parameters Settings"
+    assert excinfo.value.status_code == 403
 
 
 async def test_reboot_forbidden_names_permission(nvr_client, fake_nvr):
@@ -107,6 +108,7 @@ async def test_reboot_forbidden_names_permission(nvr_client, fake_nvr):
     with pytest.raises(NvrAuthError) as excinfo:
         await nvr_client.reboot()
     assert excinfo.value.required_permission == "Remote: Shutdown / Reboot"
+    assert excinfo.value.status_code == 403
 
 
 async def test_wrong_credentials_is_auth_error(fake_nvr):
@@ -115,6 +117,55 @@ async def test_wrong_credentials_is_auth_error(fake_nvr):
         with pytest.raises(NvrAuthError) as excinfo:
             await client.get_device_info()
     assert excinfo.value.required_permission is None
+    assert excinfo.value.status_code == 401
+
+
+async def test_bad_credentials_on_write_is_401_without_permission(fake_nvr):
+    async with httpx.AsyncClient(transport=httpx.MockTransport(fake_nvr)) as http:
+        client = HikvisionNvrClient("nvr.test", "intruder", "x", http, retry_delays=(0, 0))
+        with pytest.raises(NvrAuthError) as excinfo:
+            await client.set_recording(False, ALL_TRACKS)
+    assert excinfo.value.status_code == 401
+    assert excinfo.value.required_permission is None
+    assert "authentication failed for /ISAPI/ContentMgmt/record/tracks/101" in str(
+        excinfo.value
+    )
+    assert fake_nvr.put_bodies == []
+
+
+async def test_set_recording_connection_error_on_one_track(nvr_client, fake_nvr):
+    fake_nvr.timeout_tracks = {201}
+    with pytest.raises(NvrWriteError) as excinfo:
+        await nvr_client.set_recording(False, ALL_TRACKS)
+    assert excinfo.value.failed_track_ids == [201]
+    assert fake_nvr.schedule_enabled == {101: False, 201: True, 301: False}
+
+
+async def test_set_recording_busy_on_one_track_continues(nvr_client, fake_nvr, monkeypatch):
+    original = FakeNvr._get
+
+    def busy_for_201(self, path):
+        if path.endswith("/201"):
+            return httpx.Response(503, text=self._busy_xml)
+        return original(self, path)
+
+    monkeypatch.setattr(FakeNvr, "_get", busy_for_201)
+    with pytest.raises(NvrWriteError) as excinfo:
+        await nvr_client.set_recording(False, ALL_TRACKS)
+    assert excinfo.value.failed_track_ids == [201]
+    assert fake_nvr.schedule_enabled == {101: False, 201: True, 301: False}
+
+
+async def test_reboot_bad_status_code_is_error(nvr_client, fake_nvr):
+    fake_nvr.reboot_status_code = 4
+    with pytest.raises(NvrError):
+        await nvr_client.reboot()
+
+
+async def test_reboot_empty_body_is_error(nvr_client, fake_nvr):
+    fake_nvr.reboot_empty_body = True
+    with pytest.raises(NvrError):
+        await nvr_client.reboot()
 
 
 async def test_reboot(nvr_client, fake_nvr):

@@ -53,6 +53,10 @@ class FakeNvr:
         self.deny_writes = False
         self.fail_tracks: set[int] = set()
         self.reboots = 0
+        self.reboot_status_code = 1
+        self.reboot_empty_body = False
+        # Tracks whose requests raise a connect timeout in the transport.
+        self.timeout_tracks: set[int] = set()
         # (method, path, status) of every response served, in order.
         self.log: list[tuple[str, str, int]] = []
 
@@ -99,6 +103,9 @@ class FakeNvr:
     # -- transport handler --------------------------------------------------
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
+        match = _TRACK_PATH_RE.match(request.url.path)
+        if match and int(match.group(1)) in self.timeout_tracks:
+            raise httpx.ConnectTimeout("timed out", request=request)
         response = self._handle(request)
         self.log.append((request.method, request.url.path, response.status_code))
         return response
@@ -140,7 +147,11 @@ class FakeNvr:
     def _put(self, path: str, body: str) -> httpx.Response:
         if path == "/ISAPI/System/reboot":
             self.reboots += 1
-            return httpx.Response(200, text=_response_status(1, "OK"))
+            if self.reboot_empty_body:
+                return httpx.Response(200, text="")
+            return httpx.Response(
+                200, text=_response_status(self.reboot_status_code, "reboot")
+            )
         match = _TRACK_PATH_RE.match(path)
         if match and int(match.group(1)) in self._track_templates:
             track_id = int(match.group(1))

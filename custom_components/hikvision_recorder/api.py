@@ -71,10 +71,19 @@ class NvrBusyError(NvrError):
 
 
 class NvrAuthError(NvrError):
-    """HTTP 401/403, usually missing credentials or a missing permission."""
+    """HTTP 401 (bad credentials) or 403 (missing permission).
 
-    def __init__(self, message: str, required_permission: str | None = None) -> None:
+    required_permission is set only for 403.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        status_code: int,
+        required_permission: str | None = None,
+    ) -> None:
         super().__init__(message)
+        self.status_code = status_code
         self.required_permission = required_permission
 
 
@@ -147,10 +156,15 @@ class HikvisionNvrClient:
                 raise NvrBusyError(
                     f"{method} {name}: device busy after {attempts} attempts"
                 )
-            if status in (401, 403):
+            if status == 401:
                 raise NvrAuthError(
-                    f"{method} {name}: HTTP {status}"
+                    f"authentication failed for {name}", status, None
+                )
+            if status == 403:
+                raise NvrAuthError(
+                    f"{method} {name}: HTTP 403"
                     + (f", requires permission '{permission}'" if permission else ""),
+                    status,
                     permission,
                 )
             if not 200 <= status < 300:
@@ -189,15 +203,16 @@ class HikvisionNvrClient:
     async def set_recording(self, enabled: bool, track_ids: Iterable[int]) -> None:
         """Set enableSchedule on each track; try all, then report failures.
 
-        Connection and authorisation errors abort at once (the NVR is
-        unreachable or every write would be refused); per-track failures are
-        collected and raised together as NvrWriteError.
+        Only NvrAuthError aborts at once (every write would be refused).
+        Every other per-track error (connection, busy, bad response or
+        statusCode) marks that track failed and the loop continues; failures
+        are raised together as NvrWriteError.
         """
         failed: list[int] = []
         for track_id in track_ids:
             try:
                 await self._set_track(track_id, enabled)
-            except (NvrConnectionError, NvrAuthError):
+            except NvrAuthError:
                 raise
             except NvrError as err:
                 _LOGGER.warning("Could not set recording on track %s: %s", track_id, err)
@@ -229,7 +244,8 @@ class HikvisionNvrClient:
 
     async def reboot(self) -> None:
         response = await self._request("PUT", PATH_REBOOT, permission=PERM_REBOOT)
-        if response.text.strip():
-            code, text = self._parse(PATH_REBOOT, parse_response_status, response.text)
-            if code != 1:
-                raise NvrError(f"PUT {PATH_REBOOT}: statusCode {code} ({text})")
+        if response.status_code != 200:
+            raise NvrError(f"PUT {PATH_REBOOT}: HTTP {response.status_code}")
+        code, text = self._parse(PATH_REBOOT, parse_response_status, response.text)
+        if code != 1:
+            raise NvrError(f"PUT {PATH_REBOOT}: statusCode {code} ({text})")
