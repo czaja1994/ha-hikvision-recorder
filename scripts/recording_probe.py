@@ -54,6 +54,7 @@ async def run_probe(
     probe_channel: int = 3,
     poll_interval: float = 5.0,
     timeout: float = 60.0,
+    restore_delays: tuple[float, ...] = (2.0, 5.0, 10.0),
 ) -> bool:
     backup_dir.mkdir(parents=True, exist_ok=True)
     backups: dict[int, str] = {}
@@ -63,6 +64,26 @@ async def run_probe(
             backups[track_id], encoding="utf-8"
         )
     print(f"backups written to {backup_dir}")
+
+    # Preflight: abort before any write unless the state is what we expect.
+    if backups[probe_track].count("<enableSchedule>true</enableSchedule>") != 1:
+        print(
+            f"ABORT: backup of track {probe_track} does not contain exactly one "
+            "enableSchedule=true; nothing written"
+        )
+        return False
+    try:
+        status = await client.get_working_status()
+    except NvrError as err:
+        print(f"ABORT: cannot read working status ({err}); nothing written")
+        return False
+    channel = status.get(probe_channel)
+    if channel is None or not channel.online or not channel.recording:
+        print(
+            f"ABORT: channel {probe_channel} is missing, offline or not recording; "
+            "nothing written"
+        )
+        return False
 
     ok = False
     off_attempted = False
@@ -92,10 +113,22 @@ async def run_probe(
         print(f"FAIL: {err}")
     finally:
         if off_attempted:
-            try:
-                await client.set_recording(True, [probe_track])
-            except NvrError as err:
-                print(f"RESTORE FAILED, re-enable track {probe_track} manually: {err}")
+            restored = False
+            for attempt in range(len(restore_delays) + 1):
+                try:
+                    await client.set_recording(True, [probe_track])
+                    restored = True
+                    break
+                except NvrError as err:
+                    print(f"restore attempt {attempt + 1} failed: {err}")
+                    if attempt < len(restore_delays):
+                        await asyncio.sleep(restore_delays[attempt])
+            if not restored:
+                print(
+                    f"RESTORE FAILED: set enableSchedule to true on track "
+                    f"{probe_track} manually; original XML: "
+                    f"{backup_dir / f'track_{probe_track}.xml'}"
+                )
                 ok = False
     return ok
 
