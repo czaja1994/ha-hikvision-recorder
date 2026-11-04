@@ -55,6 +55,10 @@ class FakeNvr:
         self.reboots = 0
         self.reboot_status_code = 1
         self.reboot_empty_body = False
+        # The NVR drops the connection while rebooting: PUT reboot times out.
+        self.reboot_timeout = False
+        # Every request fails at the transport (cable pulled, NVR rebooting).
+        self.unreachable = False
         # Tracks whose requests raise a connect timeout in the transport.
         self.timeout_tracks: set[int] = set()
         # (method, path, status) of every response served, in order.
@@ -103,6 +107,13 @@ class FakeNvr:
     # -- transport handler --------------------------------------------------
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
+        if self.unreachable:
+            raise httpx.ConnectError("unreachable", request=request)
+        if self.reboot_timeout and (
+            request.method == "PUT" and request.url.path == "/ISAPI/System/reboot"
+        ):
+            self.reboots += 1
+            raise httpx.ReadTimeout("timed out", request=request)
         match = _TRACK_PATH_RE.match(request.url.path)
         if match and int(match.group(1)) in self.timeout_tracks:
             raise httpx.ConnectTimeout("timed out", request=request)

@@ -27,5 +27,30 @@
       "reauth_successful": "Re-authentication was successful.",
       "unique_id_mismatch": "The credentials belong to a different recorder."
     }
+  },
+  "entity": {
+    "switch": {
+      "recording": {
+        "name": "Recording"
+      }
+    },
+    "binary_sensor": {
+      "camera_online": {
+        "name": "{camera} online"
+      },
+      "camera_recording": {
+        "name": "{camera} recording"
+      }
+    },
+    "button": {
+      "restart": {
+        "name": "Restart NVR"
+      }
+    },
+    "sensor": {
+      "last_restart": {
+        "name": "Last restart"
+      }
+    }
   }
 }

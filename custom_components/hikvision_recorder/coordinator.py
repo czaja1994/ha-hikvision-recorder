@@ -15,6 +15,7 @@ from homeassistant.util import dt as dt_util
 from .api import (
     HikvisionNvrClient,
     NvrAuthError,
+    NvrConnectionError,
     NvrError,
     NvrWriteError,
 )
@@ -95,9 +96,19 @@ class HikRecorderCoordinator(DataUpdateCoordinator[NvrState]):
             await self.async_request_refresh()
 
     async def async_reboot(self) -> None:
-        """Reboot the NVR and remember when."""
+        """Reboot the NVR and remember when.
+
+        The NVR typically drops the connection while rebooting, so a
+        connection error after the request counts as a started reboot. Any
+        other error (403, bad statusCode) means it did not reboot.
+        """
         try:
             await self.client.reboot()
+        except NvrConnectionError as err:
+            _LOGGER.warning(
+                "NVR dropped the connection during reboot, assuming it is restarting: %s",
+                err,
+            )
         except NvrError as err:
             raise HomeAssistantError(str(err)) from err
         self.last_restart = dt_util.utcnow()

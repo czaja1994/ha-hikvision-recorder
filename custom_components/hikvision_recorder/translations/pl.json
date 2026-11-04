@@ -1,0 +1,56 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Połącz z rejestratorem",
+        "description": "Podaj adres i dane logowania rejestratora Hikvision.",
+        "data": {
+          "host": "Adres",
+          "username": "Użytkownik",
+          "password": "Hasło"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Ponowne uwierzytelnienie",
+        "description": "Dane logowania do {host} przestały być ważne. Podaj nowe hasło.",
+        "data": {
+          "password": "Hasło"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Nie udało się połączyć z rejestratorem.",
+      "invalid_auth": "Nieprawidłowy użytkownik lub hasło."
+    },
+    "abort": {
+      "already_configured": "Ten rejestrator jest już skonfigurowany.",
+      "reauth_successful": "Ponowne uwierzytelnienie powiodło się.",
+      "unique_id_mismatch": "Dane logowania należą do innego rejestratora."
+    }
+  },
+  "entity": {
+    "switch": {
+      "recording": {
+        "name": "Nagrywanie"
+      }
+    },
+    "binary_sensor": {
+      "camera_online": {
+        "name": "{camera} online"
+      },
+      "camera_recording": {
+        "name": "{camera} nagrywa"
+      }
+    },
+    "button": {
+      "restart": {
+        "name": "Restart NVR"
+      }
+    },
+    "sensor": {
+      "last_restart": {
+        "name": "Ostatni restart"
+      }
+    }
+  }
+}
