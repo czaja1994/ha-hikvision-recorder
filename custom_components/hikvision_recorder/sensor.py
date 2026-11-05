@@ -12,6 +12,8 @@ from homeassistant.util import dt as dt_util
 from .coordinator import HikRecorderConfigEntry, HikRecorderCoordinator
 from .entity import HikRecorderEntity
 
+PARALLEL_UPDATES = 0
+
 
 async def async_setup_entry(
     hass: HomeAssistant,

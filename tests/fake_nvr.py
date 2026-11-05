@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 import re
@@ -61,6 +62,9 @@ class FakeNvr:
         self.unreachable = False
         # Tracks whose requests raise a connect timeout in the transport.
         self.timeout_tracks: set[int] = set()
+        # Yield to the event loop before answering, so concurrent callers can
+        # interleave the way they would over a real network.
+        self.yield_on_request = False
         # (method, path, status) of every response served, in order.
         self.log: list[tuple[str, str, int]] = []
 
@@ -106,7 +110,16 @@ class FakeNvr:
 
     # -- transport handler --------------------------------------------------
 
-    def __call__(self, request: httpx.Request) -> httpx.Response:
+    def __call__(self, request: httpx.Request):
+        if self.yield_on_request:
+            return self._yielding(request)
+        return self._serve(request)
+
+    async def _yielding(self, request: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(0)
+        return self._serve(request)
+
+    def _serve(self, request: httpx.Request) -> httpx.Response:
         if self.unreachable:
             raise httpx.ConnectError("unreachable", request=request)
         if self.reboot_timeout and (

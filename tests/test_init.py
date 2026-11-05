@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+import re
+
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
@@ -161,6 +164,28 @@ async def test_set_recording_and_reboot(hass: HomeAssistant, patch_nvr: FakeNvr)
     await coordinator.async_reboot()
     assert patch_nvr.reboots == 1
     assert coordinator.last_restart is not None
+
+
+async def test_overlapping_writes_do_not_interleave(
+    hass: HomeAssistant, patch_nvr: FakeNvr
+) -> None:
+    """A turn_off and a turn_on racing must end with the last call's value."""
+    entry = await _setup(hass)
+    coordinator: HikRecorderCoordinator = entry.runtime_data
+    patch_nvr.yield_on_request = True
+
+    await asyncio.gather(
+        coordinator.async_set_recording(False),
+        coordinator.async_set_recording(True),
+    )
+
+    assert patch_nvr.schedule_enabled == {101: True, 201: True, 301: True}
+    # Every PUT of the first call precedes every PUT of the second.
+    flags = [
+        re.search(r"<enableSchedule>(true|false)<", body).group(1)
+        for body in patch_nvr.put_bodies
+    ]
+    assert flags == ["false"] * 3 + ["true"] * 3
 
 
 async def test_unload_entry(hass: HomeAssistant, patch_nvr: FakeNvr) -> None:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime
 import logging
@@ -59,6 +60,8 @@ class HikRecorderCoordinator(DataUpdateCoordinator[NvrState]):
         self.device = device
         self.cameras = cameras
         self.last_restart: datetime | None = None
+        # Serialises every write to the NVR (recording flags, reboot).
+        self._write_lock = asyncio.Lock()
 
     async def _async_update_data(self) -> NvrState:
         try:
@@ -76,24 +79,26 @@ class HikRecorderCoordinator(DataUpdateCoordinator[NvrState]):
         """Switch recording on or off for every camera, then refresh.
 
         Every track is tried; the refresh runs even when some writes failed so
-        entity state reflects the device.
+        entity state reflects the device. The whole call holds the write lock,
+        so overlapping calls run one after another and the last one wins.
         """
         track_ids = [camera.track_id for camera in self.cameras]
-        try:
-            await self.client.set_recording(enabled, track_ids)
-        except NvrWriteError as err:
-            names = [
-                camera.name
-                for camera in self.cameras
-                if camera.track_id in err.failed_track_ids
-            ]
-            raise HomeAssistantError(
-                "Could not switch recording for: " + ", ".join(names)
-            ) from err
-        except NvrAuthError as err:
-            raise HomeAssistantError(str(err)) from err
-        finally:
-            await self.async_request_refresh()
+        async with self._write_lock:
+            try:
+                await self.client.set_recording(enabled, track_ids)
+            except NvrWriteError as err:
+                names = [
+                    camera.name
+                    for camera in self.cameras
+                    if camera.track_id in err.failed_track_ids
+                ]
+                raise HomeAssistantError(
+                    "Could not switch recording for: " + ", ".join(names)
+                ) from err
+            except NvrAuthError as err:
+                raise HomeAssistantError(str(err)) from err
+            finally:
+                await self.async_refresh()
 
     async def async_reboot(self) -> None:
         """Reboot the NVR and remember when.
@@ -102,14 +107,15 @@ class HikRecorderCoordinator(DataUpdateCoordinator[NvrState]):
         connection error after the request counts as a started reboot. Any
         other error (403, bad statusCode) means it did not reboot.
         """
-        try:
-            await self.client.reboot()
-        except NvrConnectionError as err:
-            _LOGGER.warning(
-                "NVR dropped the connection during reboot, assuming it is restarting: %s",
-                err,
-            )
-        except NvrError as err:
-            raise HomeAssistantError(str(err)) from err
-        self.last_restart = dt_util.utcnow()
-        self.async_update_listeners()
+        async with self._write_lock:
+            try:
+                await self.client.reboot()
+            except NvrConnectionError as err:
+                _LOGGER.warning(
+                    "NVR dropped the connection during reboot, assuming it is restarting: %s",
+                    err,
+                )
+            except NvrError as err:
+                raise HomeAssistantError(str(err)) from err
+            self.last_restart = dt_util.utcnow()
+            self.async_update_listeners()

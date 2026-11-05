@@ -13,6 +13,8 @@ from .coordinator import HikRecorderConfigEntry, HikRecorderCoordinator
 from .entity import HikRecorderEntity
 from .parsing import Camera
 
+PARALLEL_UPDATES = 0
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
