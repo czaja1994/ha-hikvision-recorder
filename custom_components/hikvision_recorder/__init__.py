@@ -37,8 +37,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: HikRecorderConfigEntry) 
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
 
-    # Register the device up front so it exists (and merges by MAC with other
-    # integrations' devices) even though no entity has been added yet.
+    # Register the device up front so it exists even though no entity has been
+    # added yet.
     dr.async_get(hass).async_get_or_create(
         config_entry_id=entry.entry_id, **build_device_info(device)
     )

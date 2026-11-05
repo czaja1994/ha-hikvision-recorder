@@ -11,7 +11,7 @@ from .parsing import NvrDeviceInfo
 
 
 def build_device_info(device: NvrDeviceInfo) -> DeviceInfo:
-    """Device registry info; the MAC connection merges with other integrations."""
+    """Device registry info; the MAC connection only relates this device to others."""
     return DeviceInfo(
         identifiers={(DOMAIN, device.serial)},
         connections={(CONNECTION_NETWORK_MAC, device.mac)},
