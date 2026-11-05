@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 import subprocess
 import sys
 import time
@@ -66,6 +67,76 @@ def git_files() -> list[str]:
     return [f for f in out.split("\0") if f]
 
 
+def _git_output(root: Path, args: list[str], data: bytes | None = None) -> bytes:
+    return subprocess.run(
+        ["git", *args], cwd=root, input=data, capture_output=True, check=True
+    ).stdout
+
+
+def _short(sha: str) -> str:
+    return sha[:10]
+
+
+def scan_history(root: Path, secrets: set[str]) -> list[str]:
+    """Locations of secret values in any blob or commit message reachable from a ref.
+
+    Every blob reachable from `git rev-list --all` is read once, whatever
+    revision or path it appears under. Returns "path:line [blob sha]" and
+    "commit sha message" entries; the values themselves are never included,
+    and a path that contains a value is shown as <path hidden>.
+    """
+    needles = [s.lower() for s in secrets]
+
+    def leaks(text: str) -> bool:
+        lowered = text.lower()
+        return any(n in lowered for n in needles)
+
+    found: list[str] = []
+
+    # Commit messages.
+    log = _git_output(root, ["log", "--all", "--format=%x1e%H%x1f%B"]).decode(
+        "utf-8", errors="ignore"
+    )
+    for record in log.split("\x1e"):
+        sha, _, message = record.partition("\x1f")
+        if sha.strip() and leaks(message):
+            found.append(f"commit {_short(sha.strip())} message")
+
+    # Blobs: one (sha, first path) per unique blob.
+    listing = _git_output(root, ["rev-list", "--objects", "--all"])
+    checked = _git_output(
+        root,
+        ["cat-file", "--batch-check=%(objecttype) %(objectname) %(rest)"],
+        listing,
+    ).decode("utf-8", errors="ignore")
+    blobs: dict[str, str] = {}
+    for line in checked.splitlines():
+        kind, _, rest = line.partition(" ")
+        sha, _, path = rest.partition(" ")
+        if kind == "blob" and sha not in blobs:
+            blobs[sha] = path
+    if not blobs:
+        return found
+
+    stream = _git_output(root, ["cat-file", "--batch"], "".join(f"{s}\n" for s in blobs).encode())
+    pos = 0
+    while pos < len(stream):
+        header_end = stream.index(b"\n", pos)
+        sha, _, size_text = stream[pos:header_end].decode().split(" ")
+        size = int(size_text)
+        body = stream[header_end + 1 : header_end + 1 + size]
+        pos = header_end + 1 + size + 1
+        path = blobs[sha]
+        text = body.decode("utf-8", errors="ignore")
+        if not leaks(text):
+            continue
+        where = "<path hidden>" if leaks(path) else path
+        for number, line in enumerate(text.splitlines(), 1):
+            if leaks(line):
+                found.append(f"{where}:{number} [blob {_short(sha)}]")
+    return found
+
+
 def main() -> int:
     env = load_env()
     try:
@@ -90,11 +161,24 @@ def main() -> int:
                     entry = f"{name}:{number}"
                     if entry not in found:
                         found.append(entry)
+    try:
+        history = scan_history(ROOT, secrets)
+    except subprocess.CalledProcessError as err:
+        print(f"ERROR: cannot scan git history, failing closed: git {err.cmd[1]} failed")
+        return 2
     if found:
-        print("Secret values found (file:line):")
+        print("Secret values found in tracked files (file:line):")
         print("\n".join(found))
+    if history:
+        print("Secret values found in git history (location [blob], find the commit with")
+        print("`git log --all --find-object=<blob>`):")
+        print("\n".join(history))
+    if found or history:
         return 1
-    print(f"OK: {len(secrets)} secret values, none found in tracked files.")
+    print(
+        f"OK: {len(secrets)} secret values, none found in tracked files, "
+        "any reachable revision or commit message."
+    )
     return 0
 
 
