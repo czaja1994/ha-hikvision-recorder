@@ -123,13 +123,19 @@ class HikRecorderCoordinator(DataUpdateCoordinator[NvrState]):
         """Reboot the NVR and remember when.
 
         The NVR typically drops the connection while rebooting, so a
-        connection error after the request counts as a started reboot. Any
-        other error (403, bad statusCode) means it did not reboot.
+        connection error counts as a started reboot only when the request had
+        been sent (read timeout or error, remote protocol error). If it never
+        left (connect error or timeout) or the NVR refused (403, bad
+        statusCode), it did not reboot and last_restart stays as it was.
         """
         async with self._write_lock:
             try:
                 await self.client.reboot()
             except NvrConnectionError as err:
+                if not err.request_sent:
+                    raise HomeAssistantError(
+                        f"Could not reach the NVR to restart it: {err}"
+                    ) from err
                 _LOGGER.warning(
                     "NVR dropped the connection during reboot, assuming it is restarting: %s",
                     err,

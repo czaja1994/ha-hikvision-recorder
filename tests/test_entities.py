@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 import logging
 
+import httpx
 from homeassistant.components.binary_sensor import DOMAIN as BINARY_SENSOR_DOMAIN
 from homeassistant.components.button import DOMAIN as BUTTON_DOMAIN, SERVICE_PRESS
 from homeassistant.components.sensor import DOMAIN as SENSOR_DOMAIN
@@ -329,12 +330,18 @@ async def test_restart_button_sets_last_restart(
     assert state.attributes["device_class"] == "timestamp"
 
 
-async def test_restart_when_nvr_drops_connection_still_counts(
-    hass: HomeAssistant, patch_nvr: FakeNvr, caplog: pytest.LogCaptureFixture
+@pytest.mark.parametrize(
+    "exception", [httpx.ReadTimeout, httpx.ReadError, httpx.RemoteProtocolError]
+)
+async def test_restart_when_request_was_sent_and_connection_drops_still_counts(
+    hass: HomeAssistant,
+    patch_nvr: FakeNvr,
+    caplog: pytest.LogCaptureFixture,
+    exception: type[httpx.TransportError],
 ) -> None:
-    """The NVR typically drops the connection while rebooting (R17)."""
+    """The NVR drops the connection while rebooting (R17, narrowed by R25)."""
     _, coordinator = await _setup(hass)
-    patch_nvr.reboot_timeout = True
+    patch_nvr.reboot_exception = exception
 
     await hass.services.async_call(
         BUTTON_DOMAIN, SERVICE_PRESS, {ATTR_ENTITY_ID: BUTTON}, blocking=True
@@ -348,6 +355,25 @@ async def test_restart_when_nvr_drops_connection_still_counts(
         record.levelno == logging.WARNING and "reboot" in record.getMessage().lower()
         for record in caplog.records
     )
+
+
+@pytest.mark.parametrize("exception", [httpx.ConnectError, httpx.ConnectTimeout])
+async def test_restart_when_request_never_left_does_not_count(
+    hass: HomeAssistant,
+    patch_nvr: FakeNvr,
+    exception: type[httpx.TransportError],
+) -> None:
+    """A connect failure means the NVR never saw the request (R25)."""
+    _, coordinator = await _setup(hass)
+    patch_nvr.reboot_exception = exception
+
+    with pytest.raises(HomeAssistantError):
+        await hass.services.async_call(
+            BUTTON_DOMAIN, SERVICE_PRESS, {ATTR_ENTITY_ID: BUTTON}, blocking=True
+        )
+    assert patch_nvr.reboots == 0
+    assert coordinator.last_restart is None
+    assert hass.states.get(LAST_RESTART).state == STATE_UNKNOWN
 
 
 async def test_restart_rejected_by_nvr_raises_and_keeps_last_restart(

@@ -65,7 +65,18 @@ class NvrError(Exception):
 
 
 class NvrConnectionError(NvrError):
-    """Timeout or network failure."""
+    """Timeout or network failure.
+
+    request_sent is True when the failure came after an authenticated request
+    had left for the NVR (read timeout or error, remote protocol error), so
+    the NVR may have acted on it. It is False for failures before that
+    (connect errors and timeouts, write errors, a failed credential-less
+    digest probe).
+    """
+
+    def __init__(self, message: str, request_sent: bool = False) -> None:
+        super().__init__(message)
+        self.request_sent = request_sent
 
 
 class NvrBusyError(NvrError):
@@ -95,6 +106,25 @@ class NvrWriteError(NvrError):
     def __init__(self, message: str, failed_track_ids: list[int]) -> None:
         super().__init__(message)
         self.failed_track_ids = failed_track_ids
+
+
+# Failures that happen only after the request has been written to the NVR.
+_SENT_ERRORS = (httpx.ReadTimeout, httpx.ReadError, httpx.RemoteProtocolError)
+
+
+def _request_was_sent(err: httpx.HTTPError) -> bool:
+    """Whether the NVR may have received and acted on the failed request.
+
+    A write error can strike mid-request, so it does not count as sent. The
+    first digest request carries no Authorization header and cannot trigger
+    anything, so a failure on it does not count either.
+    """
+    if not isinstance(err, _SENT_ERRORS):
+        return False
+    try:
+        return "Authorization" in err.request.headers
+    except RuntimeError:
+        return False
 
 
 def _bare_path(path: str) -> str:
@@ -143,7 +173,8 @@ class HikvisionNvrClient:
                 )
             except httpx.HTTPError as err:
                 raise NvrConnectionError(
-                    f"{method} {name} failed: {type(err).__name__}"
+                    f"{method} {name} failed: {type(err).__name__}",
+                    request_sent=_request_was_sent(err),
                 ) from None
 
             status = response.status_code

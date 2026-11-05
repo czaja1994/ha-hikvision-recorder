@@ -206,6 +206,38 @@ async def test_reboot_empty_body_is_error(nvr_client, fake_nvr):
         await nvr_client.reboot()
 
 
+@pytest.mark.parametrize(
+    ("exception", "request_sent"),
+    [
+        (httpx.ReadTimeout, True),
+        (httpx.ReadError, True),
+        (httpx.RemoteProtocolError, True),
+        (httpx.ConnectError, False),
+        (httpx.ConnectTimeout, False),
+        (httpx.WriteError, False),
+    ],
+)
+async def test_connection_error_records_whether_request_was_sent(
+    nvr_client, fake_nvr, exception, request_sent
+):
+    fake_nvr.reboot_exception = exception
+    with pytest.raises(NvrConnectionError) as excinfo:
+        await nvr_client.reboot()
+    assert excinfo.value.request_sent is request_sent
+
+
+async def test_failure_of_unauthenticated_digest_probe_is_not_a_sent_request():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("timed out", request=request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        client = HikvisionNvrClient("nvr.test", "admin", "secret", http, retry_delays=(0, 0))
+        with pytest.raises(NvrConnectionError) as excinfo:
+            await client.reboot()
+    # The first digest request carries no credentials, so it cannot reboot.
+    assert excinfo.value.request_sent is False
+
+
 async def test_reboot(nvr_client, fake_nvr):
     await nvr_client.reboot()
     assert fake_nvr.reboots == 1
