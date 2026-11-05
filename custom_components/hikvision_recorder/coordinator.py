@@ -33,11 +33,12 @@ class NvrState:
     """One polling snapshot."""
 
     status: dict[int, ChannelStatus]
+    online: dict[int, bool]
     schedule_enabled: dict[int, bool]
 
 
 class HikRecorderCoordinator(DataUpdateCoordinator[NvrState]):
-    """Polls the NVR for channel status and the recording schedule flags."""
+    """Polls the NVR for channel status, camera online flags and schedule flags."""
 
     config_entry: HikRecorderConfigEntry
 
@@ -62,10 +63,13 @@ class HikRecorderCoordinator(DataUpdateCoordinator[NvrState]):
         self.last_restart: datetime | None = None
         # Serialises every write to the NVR (recording flags, reboot).
         self._write_lock = asyncio.Lock()
+        # Channels already warned about as missing from channels/status.
+        self._warned_no_online: set[int] = set()
 
     async def _async_update_data(self) -> NvrState:
         try:
             status = await self.client.get_working_status()
+            online = await self.client.get_channel_online()
             schedule_enabled = await self.client.get_schedule_enabled()
         except NvrAuthError as err:
             if err.status_code == 401:
@@ -73,7 +77,22 @@ class HikRecorderCoordinator(DataUpdateCoordinator[NvrState]):
             raise UpdateFailed(str(err)) from err
         except NvrError as err:
             raise UpdateFailed(str(err)) from err
-        return NvrState(status=status, schedule_enabled=schedule_enabled)
+        self._warn_missing_online(online)
+        return NvrState(status=status, online=online, schedule_enabled=schedule_enabled)
+
+    def _warn_missing_online(self, online: dict[int, bool]) -> None:
+        """Log one warning per configured channel the NVR left out of channels/status."""
+        for camera in self.cameras:
+            if camera.channel in online:
+                self._warned_no_online.discard(camera.channel)
+            elif camera.channel not in self._warned_no_online:
+                self._warned_no_online.add(camera.channel)
+                _LOGGER.warning(
+                    "Channel %s (%s) is missing from the NVR channel status; "
+                    "its online sensor is unavailable until it reappears",
+                    camera.channel,
+                    camera.name,
+                )
 
     async def async_set_recording(self, enabled: bool) -> None:
         """Switch recording on or off for every camera, then refresh.

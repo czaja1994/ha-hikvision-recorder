@@ -21,6 +21,7 @@ from .parsing import (
     ChannelStatus,
     NvrDeviceInfo,
     parse_cameras,
+    parse_channel_online,
     parse_device_info,
     parse_response_status,
     parse_schedule_enabled,
@@ -34,6 +35,7 @@ _T = TypeVar("_T")
 
 PATH_DEVICE_INFO = "/ISAPI/System/deviceInfo"
 PATH_CHANNELS = "/ISAPI/ContentMgmt/InputProxy/channels"
+PATH_CHANNEL_STATUS = "/ISAPI/ContentMgmt/InputProxy/channels/status"
 PATH_WORKING_STATUS = "/ISAPI/System/workingstatus?format=json"
 PATH_TRACKS = "/ISAPI/ContentMgmt/record/tracks"
 PATH_REBOOT = "/ISAPI/System/reboot"
@@ -195,6 +197,13 @@ class HikvisionNvrClient:
             "GET", PATH_WORKING_STATUS, permission=PERM_WORKING_STATUS
         )
         return self._parse(PATH_WORKING_STATUS, parse_working_status, response.text)
+
+    async def get_channel_online(self) -> dict[int, bool]:
+        """Per-channel online flag, as the portal shows it."""
+        response = await self._request(
+            "GET", PATH_CHANNEL_STATUS, permission=PERM_WORKING_STATUS
+        )
+        return self._parse(PATH_CHANNEL_STATUS, parse_channel_online, response.text)
 
     async def get_schedule_enabled(self) -> dict[int, bool]:
         response = await self._request("GET", PATH_TRACKS)

@@ -9,7 +9,7 @@ from homeassistant.components.binary_sensor import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .coordinator import HikRecorderConfigEntry, HikRecorderCoordinator
+from .coordinator import HikRecorderConfigEntry, HikRecorderCoordinator, NvrState
 from .entity import HikRecorderEntity
 from .parsing import Camera
 
@@ -35,11 +35,11 @@ async def async_setup_entry(
 
 
 class HikRecorderCameraSensor(HikRecorderEntity, BinarySensorEntity):
-    """Base for sensors that read one channel of the working status.
+    """Base for sensors that read one channel of the polled NVR state.
 
     Unavailable (never off) when the last update failed or the channel is
-    missing from the status, so an unreachable NVR is not mistaken for dead
-    cameras.
+    missing from the data the sensor reads, so an unreachable NVR is not
+    mistaken for dead cameras.
     """
 
     def __init__(self, coordinator: HikRecorderCoordinator, camera: Camera) -> None:
@@ -47,17 +47,24 @@ class HikRecorderCameraSensor(HikRecorderEntity, BinarySensorEntity):
         self._camera = camera
         self._attr_translation_placeholders = {"camera": camera.name}
 
+    def _has_channel(self, state: NvrState) -> bool:
+        raise NotImplementedError
+
     @property
     def available(self) -> bool:
         return (
             super().available
             and self.coordinator.data is not None
-            and self._camera.channel in self.coordinator.data.status
+            and self._has_channel(self.coordinator.data)
         )
 
 
 class HikRecorderCameraOnline(HikRecorderCameraSensor):
-    """Whether the NVR reports the camera as online."""
+    """Whether the NVR reports the camera as online.
+
+    Read from InputProxy channels/status, the source of the portal's
+    greyed-out "offline" state.
+    """
 
     _attr_translation_key = "camera_online"
     _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
@@ -66,9 +73,12 @@ class HikRecorderCameraOnline(HikRecorderCameraSensor):
         super().__init__(coordinator, camera)
         self._attr_unique_id = f"{coordinator.device.serial}_{camera.channel}_online"
 
+    def _has_channel(self, state: NvrState) -> bool:
+        return self._camera.channel in state.online
+
     @property
     def is_on(self) -> bool:
-        return self.coordinator.data.status[self._camera.channel].online
+        return self.coordinator.data.online[self._camera.channel]
 
 
 class HikRecorderCameraRecording(HikRecorderCameraSensor):
@@ -82,6 +92,9 @@ class HikRecorderCameraRecording(HikRecorderCameraSensor):
         self._attr_unique_id = (
             f"{coordinator.device.serial}_{camera.channel}_recording"
         )
+
+    def _has_channel(self, state: NvrState) -> bool:
+        return self._camera.channel in state.status
 
     @property
     def is_on(self) -> bool:

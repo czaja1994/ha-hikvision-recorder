@@ -195,7 +195,7 @@ async def test_camera_offline_sensor(hass: HomeAssistant, patch_nvr: FakeNvr) ->
     patch_nvr.online[1] = False
     await coordinator.async_refresh()
     await hass.async_block_till_done()
-    assert coordinator.data.status[1].online is False
+    assert coordinator.data.online[1] is False
     assert hass.states.get(ONLINE["hall"]).state == STATE_OFF
     assert hass.states.get(RECORDING["hall"]).state == STATE_OFF
     assert hass.states.get(ONLINE["office"]).state == STATE_ON
@@ -210,16 +210,72 @@ async def test_camera_offline_at_startup_still_has_entities(
     assert hass.states.get(RECORDING["hall"]).state == STATE_OFF
 
 
-async def test_channel_missing_from_status_is_unavailable(
+async def test_online_sensor_follows_channels_status_not_working_status(
+    hass: HomeAssistant, patch_nvr: FakeNvr, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The portal's greyed-out state comes from InputProxy channels/status."""
+    _, coordinator = await _setup(hass)
+    # workingstatus still says online (fake.online untouched), channels/status
+    # reports the Hall camera offline.
+    original = patch_nvr.channels_status_xml
+    monkeypatch.setattr(
+        patch_nvr,
+        "channels_status_xml",
+        lambda: original().replace("<online>true</online>", "<online>false</online>", 1),
+    )
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert coordinator.data.status[1].online is True
+    assert hass.states.get(ONLINE["hall"]).state == STATE_OFF
+    assert hass.states.get(ONLINE["office"]).state == STATE_ON
+    assert hass.states.get(RECORDING["hall"]).state == STATE_ON
+
+
+async def test_channel_missing_from_status_makes_recording_unavailable(
     hass: HomeAssistant, patch_nvr: FakeNvr
 ) -> None:
     _, coordinator = await _setup(hass)
     del coordinator.data.status[2]
     coordinator.async_update_listeners()
     await hass.async_block_till_done()
-    assert hass.states.get(ONLINE["living_room"]).state == STATE_UNAVAILABLE
     assert hass.states.get(RECORDING["living_room"]).state == STATE_UNAVAILABLE
+    assert hass.states.get(ONLINE["living_room"]).state == STATE_ON
+    assert hass.states.get(RECORDING["hall"]).state == STATE_ON
+
+
+async def test_channel_missing_from_channels_status_is_unavailable_and_warns_once(
+    hass: HomeAssistant, patch_nvr: FakeNvr, caplog: pytest.LogCaptureFixture
+) -> None:
+    _, coordinator = await _setup(hass)
+    caplog.set_level(logging.WARNING)
+
+    def warnings() -> list[str]:
+        return [
+            r.getMessage()
+            for r in caplog.records
+            if r.levelno == logging.WARNING and "Living room" in r.getMessage()
+        ]
+
+    patch_nvr.channel_status_missing = {2}
+    for _ in range(3):
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+    assert hass.states.get(ONLINE["living_room"]).state == STATE_UNAVAILABLE
+    assert hass.states.get(RECORDING["living_room"]).state == STATE_ON
     assert hass.states.get(ONLINE["hall"]).state == STATE_ON
+    assert len(warnings()) == 1
+
+    patch_nvr.channel_status_missing = set()
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert hass.states.get(ONLINE["living_room"]).state == STATE_ON
+    assert len(warnings()) == 1
+
+    # Gone again: warned again, once.
+    patch_nvr.channel_status_missing = {2}
+    await coordinator.async_refresh()
+    await coordinator.async_refresh()
+    assert len(warnings()) == 2
 
 
 async def test_nvr_unreachable_sensors_unavailable_not_off(

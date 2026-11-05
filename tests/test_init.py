@@ -81,7 +81,8 @@ async def test_setup_with_camera_offline_keeps_all_cameras(
 
     coordinator = entry.runtime_data
     assert [c.name for c in coordinator.cameras] == ["Hall", "Living room", "Office"]
-    assert coordinator.data.status[1].online is False
+    assert coordinator.data.online[1] is False
+    assert coordinator.data.online[2] is True
 
 
 async def test_update_failed_on_busy(hass: HomeAssistant, patch_nvr: FakeNvr) -> None:
@@ -127,8 +128,15 @@ async def test_credentials_revoked_during_polling_starts_reauth(
     assert [f["context"]["source"] for f in flows] == ["reauth"]
 
 
-async def test_working_status_forbidden_is_update_failed_with_permission(
-    hass: HomeAssistant, patch_nvr: FakeNvr, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    "path",
+    ["/ISAPI/System/workingstatus", "/ISAPI/ContentMgmt/InputProxy/channels/status"],
+)
+async def test_status_endpoints_forbidden_is_update_failed_with_permission(
+    hass: HomeAssistant,
+    patch_nvr: FakeNvr,
+    monkeypatch: pytest.MonkeyPatch,
+    path: str,
 ) -> None:
     import httpx
 
@@ -137,7 +145,7 @@ async def test_working_status_forbidden_is_update_failed_with_permission(
     real = patch_nvr._handle
 
     def forbid_status(request: httpx.Request) -> httpx.Response:
-        if request.url.path == "/ISAPI/System/workingstatus":
+        if request.url.path == path:
             return httpx.Response(403, text="Forbidden")
         return real(request)
 

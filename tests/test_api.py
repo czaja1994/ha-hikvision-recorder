@@ -33,6 +33,44 @@ async def test_get_working_status_with_digest(nvr_client, fake_nvr):
     assert [code for _, _, code in fake_nvr.log] == [401, 200]
 
 
+async def test_get_channel_online(nvr_client, fake_nvr):
+    assert await nvr_client.get_channel_online() == {1: True, 2: True, 3: True}
+    fake_nvr.online[1] = False
+    assert await nvr_client.get_channel_online() == {1: False, 2: True, 3: True}
+
+
+async def test_channel_online_forbidden_names_permission(nvr_client, fake_nvr, monkeypatch):
+    real = fake_nvr._handle
+
+    def forbid(request):
+        if request.url.path == "/ISAPI/ContentMgmt/InputProxy/channels/status":
+            return httpx.Response(403, text="Forbidden")
+        return real(request)
+
+    monkeypatch.setattr(fake_nvr, "_handle", forbid)
+    with pytest.raises(NvrAuthError) as excinfo:
+        await nvr_client.get_channel_online()
+    assert excinfo.value.status_code == 403
+    assert excinfo.value.required_permission == (
+        "Remote: Log Search / Interrogate Working Status"
+    )
+
+
+async def test_channel_online_wrong_credentials_is_401(fake_nvr):
+    async with httpx.AsyncClient(transport=httpx.MockTransport(fake_nvr)) as http:
+        client = HikvisionNvrClient("nvr.test", "intruder", "x", http, retry_delays=(0, 0))
+        with pytest.raises(NvrAuthError) as excinfo:
+            await client.get_channel_online()
+    assert excinfo.value.status_code == 401
+
+
+async def test_channel_online_malformed_body_raises_nvr_error(nvr_client, monkeypatch):
+    monkeypatch.setattr(FakeNvr, "channels_status_xml", lambda self: "<not-xml")
+    with pytest.raises(NvrError) as excinfo:
+        await nvr_client.get_channel_online()
+    assert "/ISAPI/ContentMgmt/InputProxy/channels/status" in str(excinfo.value)
+
+
 async def test_read_endpoints(nvr_client):
     info = await nvr_client.get_device_info()
     cameras = await nvr_client.get_cameras()

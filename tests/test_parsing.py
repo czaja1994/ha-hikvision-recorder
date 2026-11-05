@@ -8,6 +8,7 @@ from custom_components.hikvision_recorder.parsing import (
     Camera,
     ChannelStatus,
     parse_cameras,
+    parse_channel_online,
     parse_device_info,
     parse_response_status,
     parse_schedule_enabled,
@@ -44,6 +45,31 @@ def test_parse_working_status():
     }
     off = parse_working_status('{"ChanStatus":[{"chanNo":1,"online":0,"record":0}]}')
     assert off[1] == ChannelStatus(1, False, False)
+
+
+def test_parse_channel_online():
+    assert parse_channel_online(load("channels_status.xml")) == {
+        1: True,
+        2: True,
+        3: True,
+    }
+
+
+def test_parse_channel_online_with_offline_hall():
+    xml = load("channels_status.xml")
+    first = xml.index("<online>true</online>")
+    xml = xml[:first] + "<online>false</online>" + xml[first + len("<online>true</online>"):]
+    assert parse_channel_online(xml) == {1: False, 2: True, 3: True}
+
+
+def test_parse_channel_online_skips_channel_without_online_element():
+    xml = (
+        '<InputProxyChannelStatusList xmlns="http://www.hikvision.com/ver20/XMLSchema">'
+        "<InputProxyChannelStatus><id>1</id></InputProxyChannelStatus>"
+        "<InputProxyChannelStatus><id>2</id><online>true</online></InputProxyChannelStatus>"
+        "</InputProxyChannelStatusList>"
+    )
+    assert parse_channel_online(xml) == {2: True}
 
 
 def test_parse_schedule_enabled():

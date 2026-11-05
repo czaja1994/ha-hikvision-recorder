@@ -79,6 +79,22 @@ def parse_working_status(text: str) -> dict[int, ChannelStatus]:
     return result
 
 
+def parse_channel_online(xml: str) -> dict[int, bool]:
+    """Parse InputProxy channels/status into {channel: online}.
+
+    This is the source of the portal's greyed-out "offline" state. A channel
+    without an <online> element is left out.
+    """
+    root = ET.fromstring(xml)
+    result: dict[int, bool] = {}
+    for item in root.iter(f"{{{NS['h']}}}InputProxyChannelStatus"):
+        online = item.find("h:online", NS)
+        if online is None:
+            continue
+        result[int(_text(item, "id"))] = (online.text or "").strip().lower() == "true"
+    return result
+
+
 def parse_schedule_enabled(tracks_xml: str) -> dict[int, bool]:
     """Map track id to its CustomExtension/enableSchedule value."""
     root = ET.fromstring(tracks_xml)

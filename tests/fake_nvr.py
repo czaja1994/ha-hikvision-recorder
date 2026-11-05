@@ -14,6 +14,10 @@ FIXTURES = Path(__file__).parent / "fixtures"
 _TRACK_RE = re.compile(r"<Track\b.*?</Track>", re.DOTALL)
 _ENABLE_RE = re.compile(r"<enableSchedule>(?:true|false)</enableSchedule>")
 _ID_RE = re.compile(r"<id>(\d+)</id>")
+_CHANNEL_STATUS_RE = re.compile(
+    r"<InputProxyChannelStatus\b.*?</InputProxyChannelStatus>", re.DOTALL
+)
+_ONLINE_RE = re.compile(r"<online>(?:true|false)</online>")
 _TRACK_PATH_RE = re.compile(r"^/ISAPI/ContentMgmt/record/tracks/(\d+)$")
 
 _CHALLENGE = 'Digest realm="test", qop="auth", nonce="abc", algorithm="MD5"'
@@ -37,6 +41,9 @@ class FakeNvr:
         self.username = username
         self._tracks_xml = (FIXTURES / "tracks.xml").read_text(encoding="utf-8")
         self._channels_xml = (FIXTURES / "channels.xml").read_text(encoding="utf-8")
+        self._channels_status_xml = (FIXTURES / "channels_status.xml").read_text(
+            encoding="utf-8"
+        )
         self._device_xml = (FIXTURES / "device_info.xml").read_text(encoding="utf-8")
         self._busy_xml = (FIXTURES / "busy.xml").read_text(encoding="utf-8")
         self._declaration = self._tracks_xml.split("\n", 1)[0]
@@ -49,6 +56,8 @@ class FakeNvr:
             track_id: True for track_id in self._track_templates
         }
         self.online: dict[int, bool] = {1: True, 2: True, 3: True}
+        # Channels whose InputProxyChannelStatus is absent from channels/status.
+        self.channel_status_missing: set[int] = set()
         self.put_bodies: list[str] = []
         self.busy_responses = 0
         self.deny_writes = False
@@ -91,6 +100,18 @@ class FakeNvr:
             )
 
         return _TRACK_RE.sub(swap, self._tracks_xml)
+
+    def channels_status_xml(self) -> str:
+        """InputProxy channels/status with <online> taken from self.online."""
+
+        def swap(match: re.Match[str]) -> str:
+            channel = int(_ID_RE.search(match.group(0)).group(1))
+            if channel in self.channel_status_missing:
+                return ""
+            flag = "true" if self.online.get(channel, False) else "false"
+            return _ONLINE_RE.sub(f"<online>{flag}</online>", match.group(0), count=1)
+
+        return _CHANNEL_STATUS_RE.sub(swap, self._channels_status_xml)
 
     def working_status_json(self) -> str:
         chan_status = []
@@ -159,6 +180,8 @@ class FakeNvr:
             return httpx.Response(200, text=self._device_xml)
         if path == "/ISAPI/ContentMgmt/InputProxy/channels":
             return httpx.Response(200, text=self._channels_xml)
+        if path == "/ISAPI/ContentMgmt/InputProxy/channels/status":
+            return httpx.Response(200, text=self.channels_status_xml())
         if path == "/ISAPI/System/workingstatus":
             return httpx.Response(200, text=self.working_status_json())
         if path == "/ISAPI/ContentMgmt/record/tracks":
