@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Połącz z rejestratorem",
-        "description": "Podaj adres i dane logowania rejestratora Hikvision.",
+        "description": "Podaj adres IP lub nazwę hosta rejestratora Hikvision, opcjonalnie z portem, bez przedrostka http:// (tylko HTTP), oraz dane logowania.",
         "data": {
           "host": "Adres",
           "username": "Użytkownik",
@@ -20,7 +20,8 @@
     },
     "error": {
       "cannot_connect": "Nie udało się połączyć z rejestratorem.",
-      "invalid_auth": "Nieprawidłowy użytkownik lub hasło."
+      "invalid_auth": "Nieprawidłowy użytkownik lub hasło.",
+      "missing_permission": "Konto nie ma wymaganego uprawnienia: {permission}. Włącz je użytkownikowi na rejestratorze (Remote: Parameters Settings, Log Search / Interrogate Working Status, Shutdown / Reboot, Live View)."
     },
     "abort": {
       "already_configured": "Ten rejestrator jest już skonfigurowany.",

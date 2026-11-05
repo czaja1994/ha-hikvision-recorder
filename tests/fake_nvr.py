@@ -61,6 +61,8 @@ class FakeNvr:
         self.put_bodies: list[str] = []
         self.busy_responses = 0
         self.deny_writes = False
+        # GET paths answered with 403 (the account lacks the permission).
+        self.forbidden_paths: set[str] = set()
         self.fail_tracks: set[int] = set()
         self.reboots = 0
         self.reboot_status_code = 1
@@ -177,6 +179,8 @@ class FakeNvr:
             return httpx.Response(503, text=self._busy_xml)
 
         path = request.url.path
+        if path in self.forbidden_paths:
+            return httpx.Response(403, text="Forbidden")
         if request.method == "GET":
             return self._get(path)
         if request.method == "PUT":

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 import logging
+import re
 from typing import Any
 
 import voluptuous as vol
@@ -20,10 +21,27 @@ from .parsing import NvrDeviceInfo
 _LOGGER = logging.getLogger(__name__)
 
 
+# Shown when a 403 does not say which permission is missing.
+ALL_PERMISSIONS = (
+    "Parameters Settings, Log Search / Interrogate Working Status, "
+    "Shutdown / Reboot, Live View"
+)
+
+
+def _normalize_host(host: str) -> str:
+    """IP or hostname with an optional port: no scheme, no trailing slash."""
+    host = host.strip()
+    host = re.sub(r"^https?://", "", host, flags=re.IGNORECASE)
+    return host.rstrip("/")
+
+
 async def _validate(
     hass: HomeAssistant, host: str, username: str, password: str
 ) -> NvrDeviceInfo:
-    """Fetch device info; raises NvrError subclasses."""
+    """Check the credentials and the read permissions the integration polls.
+
+    Raises NvrError subclasses.
+    """
     client = HikvisionNvrClient(
         host,
         username,
@@ -31,11 +49,22 @@ async def _validate(
         get_async_client(hass, verify_ssl=False),
         retry_delays=RETRY_DELAYS,
     )
-    return await client.get_device_info()
+    device = await client.get_device_info()
+    # Polled every cycle; catch a missing Working Status permission at setup.
+    await client.get_working_status()
+    await client.get_channel_online()
+    return device
 
 
-def _error_key(err: NvrError) -> str:
-    return "invalid_auth" if isinstance(err, NvrAuthError) else "cannot_connect"
+def _error(err: NvrError) -> tuple[str, dict[str, str]]:
+    """Error key and the description placeholders it needs."""
+    if isinstance(err, NvrAuthError):
+        if err.status_code == 403:
+            return "missing_permission", {
+                "permission": err.required_permission or ALL_PERMISSIONS
+            }
+        return "invalid_auth", {}
+    return "cannot_connect", {}
 
 
 class HikRecorderConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -47,20 +76,25 @@ class HikRecorderConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         errors: dict[str, str] = {}
+        placeholders: dict[str, str] = {}
         if user_input is not None:
+            host = _normalize_host(user_input[CONF_HOST])
             try:
                 device = await _validate(
                     self.hass,
-                    user_input[CONF_HOST],
+                    host,
                     user_input[CONF_USERNAME],
                     user_input[CONF_PASSWORD],
                 )
             except NvrError as err:
-                errors["base"] = _error_key(err)
+                errors["base"], placeholders = _error(err)
             else:
                 await self.async_set_unique_id(device.serial)
-                self._abort_if_unique_id_configured()
-                return self.async_create_entry(title=device.name, data=user_input)
+                # The same NVR at a new address updates the stored host.
+                self._abort_if_unique_id_configured(updates={CONF_HOST: host})
+                return self.async_create_entry(
+                    title=device.name, data={**user_input, CONF_HOST: host}
+                )
 
         schema = vol.Schema(
             {
@@ -72,6 +106,7 @@ class HikRecorderConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="user",
             data_schema=self.add_suggested_values_to_schema(schema, user_input),
+            description_placeholders=placeholders,
             errors=errors,
         )
 
@@ -85,6 +120,7 @@ class HikRecorderConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         entry = self._get_reauth_entry()
         errors: dict[str, str] = {}
+        placeholders: dict[str, str] = {"host": entry.data[CONF_HOST]}
         if user_input is not None:
             try:
                 device = await _validate(
@@ -94,7 +130,8 @@ class HikRecorderConfigFlow(ConfigFlow, domain=DOMAIN):
                     user_input[CONF_PASSWORD],
                 )
             except NvrError as err:
-                errors["base"] = _error_key(err)
+                errors["base"], extra = _error(err)
+                placeholders.update(extra)
             else:
                 await self.async_set_unique_id(device.serial)
                 self._abort_if_unique_id_mismatch()
@@ -106,6 +143,6 @@ class HikRecorderConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="reauth_confirm",
             data_schema=vol.Schema({vol.Required(CONF_PASSWORD): str}),
-            description_placeholders={"host": entry.data[CONF_HOST]},
+            description_placeholders=placeholders,
             errors=errors,
         )

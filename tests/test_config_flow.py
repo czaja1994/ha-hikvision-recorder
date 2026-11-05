@@ -78,6 +78,105 @@ async def test_user_flow_already_configured(
     assert result["reason"] == "already_configured"
 
 
+@pytest.mark.parametrize(
+    ("typed", "stored"),
+    [
+        ("http://nvr.test", "nvr.test"),
+        ("HTTPS://nvr.test:8080/", "nvr.test:8080"),
+        ("  nvr.test/ ", "nvr.test"),
+        ("192.168.1.59:80", "192.168.1.59:80"),
+    ],
+)
+async def test_user_flow_normalises_host(
+    hass: HomeAssistant, patch_nvr: FakeNvr, typed: str, stored: str
+) -> None:
+    result = await hass.config_entries.flow.async_configure(
+        (await _start(hass))["flow_id"], {**USER_INPUT, CONF_HOST: typed}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_HOST] == stored
+    await hass.async_block_till_done()
+
+
+async def test_user_flow_updates_host_of_configured_nvr(
+    hass: HomeAssistant, patch_nvr: FakeNvr
+) -> None:
+    """The same NVR (same serial) at a new IP is picked up, not duplicated."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="TESTSERIAL0001",
+        data={**USER_INPUT, CONF_HOST: "192.168.1.10"},
+    )
+    entry.add_to_hass(hass)
+    result = await hass.config_entries.flow.async_configure(
+        (await _start(hass))["flow_id"], USER_INPUT
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert entry.data[CONF_HOST] == "nvr.test"
+
+
+@pytest.mark.parametrize(
+    ("path", "permission"),
+    [
+        (
+            "/ISAPI/System/workingstatus",
+            "Remote: Log Search / Interrogate Working Status",
+        ),
+        (
+            "/ISAPI/ContentMgmt/InputProxy/channels/status",
+            "Remote: Log Search / Interrogate Working Status",
+        ),
+        ("/ISAPI/System/deviceInfo", None),
+    ],
+)
+async def test_user_flow_missing_permission(
+    hass: HomeAssistant, patch_nvr: FakeNvr, path: str, permission: str | None
+) -> None:
+    patch_nvr.forbidden_paths = {path}
+    result = await hass.config_entries.flow.async_configure(
+        (await _start(hass))["flow_id"], USER_INPUT
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "missing_permission"}
+    placeholders = result["description_placeholders"]
+    if permission is not None:
+        assert placeholders["permission"] == permission
+    else:
+        for name in (
+            "Parameters Settings",
+            "Log Search / Interrogate Working Status",
+            "Shutdown / Reboot",
+            "Live View",
+        ):
+            assert name in placeholders["permission"]
+
+    # Fixing the permission lets the same form go through.
+    patch_nvr.forbidden_paths = set()
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], USER_INPUT
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
+
+
+async def test_reauth_missing_permission_keeps_form(
+    hass: HomeAssistant, patch_nvr: FakeNvr
+) -> None:
+    entry = MockConfigEntry(domain=DOMAIN, unique_id="TESTSERIAL0001", data=USER_INPUT)
+    entry.add_to_hass(hass)
+    patch_nvr.forbidden_paths = {"/ISAPI/System/workingstatus"}
+
+    result = await entry.start_reauth_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_PASSWORD: "new"}
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "missing_permission"}
+    assert result["description_placeholders"]["host"] == "nvr.test"
+    assert "Working Status" in result["description_placeholders"]["permission"]
+
+
 async def test_reauth_updates_password(hass: HomeAssistant, patch_nvr: FakeNvr) -> None:
     entry = MockConfigEntry(
         domain=DOMAIN,

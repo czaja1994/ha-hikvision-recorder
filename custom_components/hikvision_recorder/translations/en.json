@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Connect to the recorder",
-        "description": "Enter the address and credentials of the Hikvision NVR.",
+        "description": "Enter the IP address or hostname of the Hikvision NVR, with an optional port, no http:// prefix (HTTP only), and the credentials.",
         "data": {
           "host": "Host",
           "username": "Username",
@@ -20,7 +20,8 @@
     },
     "error": {
       "cannot_connect": "Failed to connect to the recorder.",
-      "invalid_auth": "Invalid username or password."
+      "invalid_auth": "Invalid username or password.",
+      "missing_permission": "The account is missing a permission: {permission}. Enable it for this user on the NVR (Remote: Parameters Settings, Log Search / Interrogate Working Status, Shutdown / Reboot, Live View)."
     },
     "abort": {
       "already_configured": "This recorder is already configured.",
